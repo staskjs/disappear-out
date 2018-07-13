@@ -1,0 +1,266 @@
+<!-- Demo version: 2017.08.06 -->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta charset="utf-8">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="msapplication-tap-highlight" content="no">
+    <meta name="viewport" content="user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width">
+
+    <link rel="stylesheet" href="https://cdn.webrtc-experiment.com/style.css">
+
+    <title>Audio+Video+Screen Sharing using RTCMultiConnection</title>
+
+    <meta name="description" content="Audio+Video+Screen Sharing using RTCMultiConnection" />
+    <meta name="keywords" content="WebRTC,RTCMultiConnection,Demos,Experiments,Samples,Examples" />
+
+    <style>
+        * {
+            word-wrap:break-word;
+        }
+
+        html {
+            width: 100%;
+            height: 100%;
+        }
+
+        body {
+            width: 100%;
+            height: 100%;
+            background-image: url(bg.jpg);
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center center;
+        }
+
+        video {
+            object-fit: fill;
+            width: 30%;
+        }
+        .mirror {
+            transform: rotateY(180deg);
+            -webkit-transform:rotateY(180deg);
+            -moz-transform:rotateY(180deg);
+        }
+        button,
+        input,
+        select {
+            font-weight: normal;
+            padding: 2px 4px;
+            text-decoration: none;
+            display: inline-block;
+            text-shadow: none;
+            font-size: 16px;
+            outline: none;
+        }
+
+        .make-center {
+            text-align: center;
+            padding: 5px 10px;
+        }
+
+        img, input, textarea {
+          max-width: 100%
+        }
+
+        @media all and (max-width: 500px) {
+            .fork-left, .fork-right, .github-stargazers {
+                display: none;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="make-center">
+        <button id="share-screen">Share Screen</button>
+    </div>
+
+    <div id="videos-container"></div>
+
+    <script src="/dist/RTCMultiConnection.min.js"></script>
+
+    <!-- custom layout for HTML5 audio/video elements -->
+    <script src="https://cdn.webrtc-experiment.com/getMediaElement.js"></script>
+
+    <!-- socket.io for signaling -->
+    <script src="/socket.io/socket.io.js"></script>
+
+    <!-- capture screen from any HTTPs domain! -->
+    <script src="https://cdn.webrtc-experiment.com:443/getScreenId.js"></script>
+
+    <script>
+        // ......................................................
+        // .......................UI Code........................
+        // ......................................................
+
+        document.getElementById('share-screen').onclick = function() {
+            connection.addStream({
+                screen: true,
+                oneway: true
+            });
+        };
+
+        // ......................................................
+        // ..................RTCMultiConnection Code.............
+        // ......................................................
+
+        var connection = new RTCMultiConnection();
+
+        // Using getScreenId.js to capture screen from any domain
+        // You do NOT need to deploy Chrome Extension YOUR-Self!!
+        connection.getScreenConstraints = function(callback) {
+            getScreenConstraints(function(error, screen_constraints) {
+                if (!error) {
+                    screen_constraints = connection.modifyScreenConstraints(screen_constraints);
+                    callback(error, screen_constraints);
+                    return;
+                }
+                throw error;
+            });
+        };
+
+        // by default, socket.io server is assumed to be deployed on your own URL
+        connection.socketURL = '/';
+
+        // comment-out below line if you do not have your own socket.io server
+        // connection.socketURL = 'https://rtcmulticonnection.herokuapp.com:443/';
+
+        connection.socketMessageEvent = 'audio-video-screen-demo';
+
+        connection.session = {
+            audio: true,
+            video: true
+        };
+
+        connection.sdpConstraints.mandatory = {
+            OfferToReceiveAudio: true,
+            OfferToReceiveVideo: true
+        };
+
+        var users = {};
+
+        connection.videosContainer = document.getElementById('videos-container');
+        connection.onstream = function(event) {
+            var user = users[event.userid];
+            if (user == null) {
+                users[event.userid] = user = {
+                    screen: null,
+                    video: null,
+                }
+            }
+
+            if(document.getElementById(event.streamid)) {
+                var existing = document.getElementById(event.streamid);
+                existing.parentNode.removeChild(existing);
+            }
+
+            var width = parseInt(connection.videosContainer.clientWidth / 2) - 20;
+
+            console.log(event);
+            if(event.stream.isScreen === true) {
+                //width = connection.videosContainer.clientWidth - 20;
+            }
+            else {
+            }
+
+            var mediaElement = getMediaElement(event.mediaElement, {
+                title: event.userid,
+                buttons: ['full-screen'],
+                width: width,
+                showOnMouseEnter: false
+            });
+
+            if (event.stream.isScreen) {
+                console.log('video', user.video);
+                user.video.style.display = 'none';
+                user.screen = mediaElement;
+            }
+            else {
+                user.video = mediaElement;
+            }
+
+            if (event.stream.type == "local" && event.stream.isScreen) {
+                document.getElementById('share-screen').disabled = true;
+            }
+            else {
+            }
+                connection.videosContainer.appendChild(mediaElement);
+
+            setTimeout(function() {
+                mediaElement.media.play();
+            }, 5000);
+
+            mediaElement.id = event.streamid;
+            console.log(user);
+        };
+
+        connection.onstreamended = function(event) {
+            var mediaElement = document.getElementById(event.streamid);
+            if(mediaElement) {
+                mediaElement.parentNode.removeChild(mediaElement);
+            }
+            if (event.stream.type == "local" && event.stream.isScreen) {
+                document.getElementById('share-screen').disabled = false;
+            }
+            if (event.stream.isScreen) {
+                if (users[event.userid] != null)
+                    users[event.userid].screen = null;
+
+                if (users[event.userid].video != null)
+                    users[event.userid].video.style.display = 'inline-block';
+            }
+            else {
+                if (users[event.userid] != null)
+                    users[event.userid].video = null;
+            }
+        };
+
+        // ......................................................
+        // ......................Handling Room-ID................
+        // ......................................................
+
+        (function() {
+            var params = {},
+                r = /([^&=]+)=?([^&]*)/g;
+
+            function d(s) {
+                return decodeURIComponent(s.replace(/\+/g, ' '));
+            }
+            var match, search = window.location.search;
+            while (match = r.exec(search.substring(1)))
+                params[d(match[1])] = d(match[2]);
+            window.params = params;
+        })();
+
+        var roomid = params.roomid;
+
+        if(roomid && roomid.length) {
+
+                // auto-join-room
+                (function reCheckRoomPresence() {
+                    connection.checkPresence(roomid, function(isRoomExists) {
+                        if(isRoomExists) {
+                            connection.join(roomid);
+                            return;
+                        }
+                        else {
+                            connection.open(roomid);
+                        }
+
+                        setTimeout(reCheckRoomPresence, 5000);
+                    });
+                })();
+        }
+    </script>
+
+
+
+
+</body>
+
+</html>
